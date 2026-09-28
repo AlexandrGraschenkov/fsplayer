@@ -659,6 +659,10 @@ int ff_sub_put_packet_backup(FFSubtitle *sub, AVPacket *pkt)
 
 void ff_sub_seek_to(FFSubtitle *sub, double delay, double v_pts)
 {
+    // sub is NULL when subtitles are disabled ("sn" option)
+    if (!sub) {
+        return;
+    }
     double wantDisplay = v_pts - delay;
     //多往前seek2s,这样能避免往回seek后没有字幕问题，因为第一帧pgs字幕的du无法预估
     if (wantDisplay > 2) {

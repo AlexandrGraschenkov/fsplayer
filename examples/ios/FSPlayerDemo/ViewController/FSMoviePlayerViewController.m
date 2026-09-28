@@ -21,8 +21,11 @@
 #import "FSCommon.h"
 #import "FSDemoHistory.h"
 #import <Photos/Photos.h>
+#include "LPProtoProbe.m" // LinguaPlayer prototype (local only)
 
 @interface FSVideoViewController ()<FSVideoRenderingDelegate>
+@property (nonatomic, strong) LPProtoProbe *probe;
+@property (nonatomic, strong) UIView *zoomContainer;
 
 @end
 
@@ -113,9 +116,14 @@
     p.PrimaryColour = 16776960;
     self.player.subtitlePreference = p;
     
-    self.player.view.frame = self.view.bounds;
-    [self.view addSubview:self.player.view];
+    self.zoomContainer = [[UIView alloc] initWithFrame:self.view.bounds];
+    self.zoomContainer.clipsToBounds = YES;
+    self.zoomContainer.backgroundColor = UIColor.blackColor;
+    [self.view addSubview:self.zoomContainer];
+    self.player.view.frame = self.zoomContainer.bounds;
+    [self.zoomContainer addSubview:self.player.view];
     [self.view addSubview:self.mediaControl];
+    self.probe = [[LPProtoProbe alloc] initWithPlayer:self.player url:self.url hostView:self.zoomContainer];
 
     self.mediaControl.delegatePlayer = self.player;
 }
@@ -140,7 +148,9 @@
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    self.player.view.frame = self.view.bounds;
+    self.zoomContainer.frame = self.view.bounds;
+    self.player.view.bounds = self.zoomContainer.bounds;
+    self.player.view.center = CGPointMake(CGRectGetMidX(self.zoomContainer.bounds), CGRectGetMidY(self.zoomContainer.bounds));
 }
 
 - (void)didReceiveMemoryWarning
@@ -404,6 +414,36 @@ static NSString *recordVideoPath = nil;
 - (void)mediaIsPreparedToPlayDidChange:(NSNotification*)notification
 {
     NSLog(@"mediaIsPreparedToPlayDidChange\n");
+    [self.player enableAccurateSeek:YES];
+    [self.probe logPrepared];
+    [self.probe runLibavLinkTest];
+    if ([NSProcessInfo.processInfo.environment[@"LP_PROTO_AUTO"] isEqualToString:@"1"]) {
+        [self runProtoScenario];
+    }
+}
+
+// Scripted checks: seek precision, snapshots with and without zoom.
+- (void)runProtoScenario
+{
+    __weak typeof(self) wself = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSTimeInterval target = MIN(10.0, wself.player.duration / 2);
+        NSDate *start = [NSDate date];
+        wself.player.currentPlaybackTime = target;
+        NSLog(@"[LPPROTO] seek requested to %.3f", target);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSLog(@"[LPPROTO] after seek: time=%.3f (%.2fs later)", wself.player.currentPlaybackTime, -start.timeIntervalSinceNow);
+            [wself.player pause];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [wself.probe saveSnapshots];
+                [wself.probe applyZoom:5 offset:CGPointMake(120, 60)];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [wself.probe saveSnapshots];
+                    NSLog(@"[LPPROTO] scenario done");
+                });
+            });
+        });
+    });
 }
 
 - (void)moviePlayBackStateDidChange:(NSNotification*)notification

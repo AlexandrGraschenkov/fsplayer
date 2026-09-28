@@ -34,6 +34,17 @@
 
 @implementation FSDemoMainViewController
 
+// LinguaPlayer prototype (local only): open LP_PROTO_URL right away.
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    static BOOL opened = NO;
+    NSString *url = NSProcessInfo.processInfo.environment[@"LP_PROTO_URL"];
+    if (!opened && url.length > 0) {
+        opened = YES;
+        [FSVideoViewController presentFromViewController:self withTitle:@"proto" URL:url completion:nil];
+    }
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
